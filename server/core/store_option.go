@@ -112,6 +112,13 @@ func SetRegionCount(regionCount int) StoreCreateOption {
 	}
 }
 
+// SetRegionCount sets the Region count for the store before deletion.
+func SetOriginalRegionCount(regionCount int) StoreCreateOption {
+	return func(store *StoreInfo) {
+		store.originalRegionCount = regionCount
+	}
+}
+
 // SetPendingPeerCount sets the pending peer count for the store.
 func SetPendingPeerCount(pendingPeerCount int) StoreCreateOption {
 	return func(store *StoreInfo) {

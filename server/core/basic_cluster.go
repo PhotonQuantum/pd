@@ -159,6 +159,13 @@ func (bc *BasicCluster) UpdateStoreStatus(storeID uint64, leaderCount int, regio
 	bc.Stores.UpdateStoreStatus(storeID, leaderCount, regionCount, pendingPeerCount, leaderSize, regionSize)
 }
 
+// UpdateStoreStatus updates the information of the store.
+func (bc *BasicCluster) UpdateStoreOriginalRegionCount(storeID uint64, regionCount int) {
+	bc.Lock()
+	defer bc.Unlock()
+	bc.Stores.SetOriginalRegionCount(storeID, regionCount)
+}
+
 const randomRegionMaxRetry = 10
 
 // RandFollowerRegion returns a random region that has a follower on the store.

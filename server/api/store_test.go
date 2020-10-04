@@ -285,6 +285,39 @@ func (s *testStoreSuite) TestStoreSetState(c *C) {
 	c.Assert(info.Store.State, Equals, metapb.StoreState_Up)
 }
 
+func (s *testStoreSuite) TestStoreOfflineProgress(c *C) {
+	url := fmt.Sprintf("%s/store/1/offline-progress", s.urlPrefix)
+	code, body := requestStatusBody(c, testDialClient, http.MethodGet, url)
+	c.Assert(code, Equals, http.StatusBadRequest)
+	c.Assert(strings.Contains(string(body), "The store is not set as Offline or Tombstone."), IsTrue)
+
+	url = fmt.Sprintf("%s/store/8/offline-progress", s.urlPrefix)
+	code, body = requestStatusBody(c, testDialClient, http.MethodGet, url)
+	c.Assert(code, Equals, http.StatusNotFound)
+	c.Assert(strings.Contains(string(body), "The store does not exist."), IsTrue)
+
+	url = fmt.Sprintf("%s/store/7/offline-progress", s.urlPrefix)
+	code, body = requestStatusBody(c, testDialClient, http.MethodGet, url)
+	c.Assert(code, Equals, http.StatusOK)
+	c.Assert(strings.Contains(string(body), "100%"), IsTrue)
+
+	bc := s.svr.GetBasicCluster()
+	store := bc.GetStore(6)
+	newStore := store.ShallowClone(core.SetOriginalRegionCount(30), core.SetRegionCount(11))
+	bc.PutStore(newStore)
+	url = fmt.Sprintf("%s/store/6/offline-progress", s.urlPrefix)
+	code, body = requestStatusBody(c, testDialClient, http.MethodGet, url)
+	c.Assert(code, Equals, http.StatusOK)
+	c.Assert(strings.Contains(string(body), "63%"), IsTrue)
+
+	newStore = store.ShallowClone(core.SetOriginalRegionCount(0))
+	bc.PutStore(newStore)
+	url = fmt.Sprintf("%s/store/6/offline-progress", s.urlPrefix)
+	code, body = requestStatusBody(c, testDialClient, http.MethodGet, url)
+	c.Assert(code, Equals, http.StatusOK)
+	c.Assert(strings.Contains(string(body), "100%"), IsTrue)
+}
+
 func (s *testStoreSuite) TestUrlStoreFilter(c *C) {
 	table := []struct {
 		u    string

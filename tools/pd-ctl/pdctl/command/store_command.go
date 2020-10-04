@@ -44,6 +44,7 @@ func NewStoreCommand() *cobra.Command {
 	s.AddCommand(NewStoreLimitCommand())
 	s.AddCommand(NewRemoveTombStoneCommand())
 	s.AddCommand(NewStoreLimitSceneCommand())
+	s.AddCommand(NewOfflineProgressCommand())
 	s.Flags().String("jq", "", "jq query")
 	s.Flags().StringSlice("state", nil, "state filter")
 	return s
@@ -188,6 +189,34 @@ func NewStoreLimitSceneCommand() *cobra.Command {
 		Long:  "show or set the limit value for a scene, <type> can be 'add-peer'(default) or 'remove-peer'",
 		Run:   storeLimitSceneCommandFunc,
 	}
+}
+
+// NewOfflineProgressCommand returns a offline-progress command for store command
+func NewOfflineProgressCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "offline-progress <store-id>",
+		Short: "show the progress for the offline progress",
+		Run:   storeOfflineProgressCommandFunc,
+	}
+}
+
+func storeOfflineProgressCommandFunc(cmd *cobra.Command, args []string) {
+	var resp string
+	var err error
+
+	if len(args) > 1 {
+		cmd.Usage()
+		return
+	}
+
+	prefix := fmt.Sprintf(storePrefix, args[0])
+	prefix += "/offline-progress"
+	cmd.Println(prefix)
+	resp, err = doRequest(cmd, prefix, http.MethodGet)
+	if err != nil {
+		cmd.Println(err)
+	}
+	cmd.Println(resp)
 }
 
 func storeLimitSceneCommandFunc(cmd *cobra.Command, args []string) {

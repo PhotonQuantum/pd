@@ -40,6 +40,7 @@ type StoreInfo struct {
 	pauseLeaderTransfer bool // not allow to be used as source or target of transfer leader
 	leaderCount         int
 	regionCount         int
+	originalRegionCount int
 	leaderSize          int64
 	regionSize          int64
 	pendingPeerCount    int
@@ -72,6 +73,7 @@ func (s *StoreInfo) Clone(opts ...StoreCreateOption) *StoreInfo {
 		pauseLeaderTransfer: s.pauseLeaderTransfer,
 		leaderCount:         s.leaderCount,
 		regionCount:         s.regionCount,
+		originalRegionCount: s.originalRegionCount,
 		leaderSize:          s.leaderSize,
 		regionSize:          s.regionSize,
 		pendingPeerCount:    s.pendingPeerCount,
@@ -97,6 +99,7 @@ func (s *StoreInfo) ShallowClone(opts ...StoreCreateOption) *StoreInfo {
 		regionCount:         s.regionCount,
 		leaderSize:          s.leaderSize,
 		regionSize:          s.regionSize,
+		originalRegionCount: s.originalRegionCount,
 		pendingPeerCount:    s.pendingPeerCount,
 		lastPersistTime:     s.lastPersistTime,
 		leaderWeight:        s.leaderWeight,
@@ -242,6 +245,11 @@ func (s *StoreInfo) GetLeaderCount() int {
 // GetRegionCount returns the Region count of the store.
 func (s *StoreInfo) GetRegionCount() int {
 	return s.regionCount
+}
+
+// GetOriginalRegionCount returns the Region count of the store before deletion.
+func (s *StoreInfo) GetOriginalRegionCount() int {
+	return s.originalRegionCount
 }
 
 // GetLeaderSize returns the leader size of the store.
@@ -617,6 +625,13 @@ func (s *StoresInfo) SetLeaderCount(storeID uint64, leaderCount int) {
 func (s *StoresInfo) SetRegionCount(storeID uint64, regionCount int) {
 	if store, ok := s.stores[storeID]; ok {
 		s.stores[storeID] = store.Clone(SetRegionCount(regionCount))
+	}
+}
+
+// SetOriginalRegionCount sets the region count to a storeInfo before deletion.
+func (s *StoresInfo) SetOriginalRegionCount(storeID uint64, regionCount int) {
+	if store, ok := s.stores[storeID]; ok {
+		s.stores[storeID] = store.Clone(SetOriginalRegionCount(regionCount))
 	}
 }
 

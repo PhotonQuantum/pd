@@ -709,6 +709,11 @@ func (c *RaftCluster) updateStoreStatusLocked(id uint64) {
 	c.core.UpdateStoreStatus(id, leaderCount, regionCount, pendingPeerCount, leaderRegionSize, regionSize)
 }
 
+func (c *RaftCluster) UpdateStoreOriginalCount(id uint64) {
+	regionCount := c.core.GetStoreRegionCount(id)
+	c.core.UpdateStoreOriginalRegionCount(id, regionCount)
+}
+
 //nolint:unused
 func (c *RaftCluster) getClusterID() uint64 {
 	c.RLock()

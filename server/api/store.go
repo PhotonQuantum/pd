@@ -14,6 +14,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -41,24 +42,25 @@ type MetaStore struct {
 
 // StoreStatus contains status about a store.
 type StoreStatus struct {
-	Capacity           typeutil.ByteSize  `json:"capacity"`
-	Available          typeutil.ByteSize  `json:"available"`
-	UsedSize           typeutil.ByteSize  `json:"used_size"`
-	LeaderCount        int                `json:"leader_count"`
-	LeaderWeight       float64            `json:"leader_weight"`
-	LeaderScore        float64            `json:"leader_score"`
-	LeaderSize         int64              `json:"leader_size"`
-	RegionCount        int                `json:"region_count"`
-	RegionWeight       float64            `json:"region_weight"`
-	RegionScore        float64            `json:"region_score"`
-	RegionSize         int64              `json:"region_size"`
-	SendingSnapCount   uint32             `json:"sending_snap_count,omitempty"`
-	ReceivingSnapCount uint32             `json:"receiving_snap_count,omitempty"`
-	ApplyingSnapCount  uint32             `json:"applying_snap_count,omitempty"`
-	IsBusy             bool               `json:"is_busy,omitempty"`
-	StartTS            *time.Time         `json:"start_ts,omitempty"`
-	LastHeartbeatTS    *time.Time         `json:"last_heartbeat_ts,omitempty"`
-	Uptime             *typeutil.Duration `json:"uptime,omitempty"`
+	Capacity            typeutil.ByteSize  `json:"capacity"`
+	Available           typeutil.ByteSize  `json:"available"`
+	UsedSize            typeutil.ByteSize  `json:"used_size"`
+	LeaderCount         int                `json:"leader_count"`
+	LeaderWeight        float64            `json:"leader_weight"`
+	LeaderScore         float64            `json:"leader_score"`
+	LeaderSize          int64              `json:"leader_size"`
+	RegionCount         int                `json:"region_count"`
+	OriginalRegionCount int                `json:"original_region_count"`
+	RegionWeight        float64            `json:"region_weight"`
+	RegionScore         float64            `json:"region_score"`
+	RegionSize          int64              `json:"region_size"`
+	SendingSnapCount    uint32             `json:"sending_snap_count,omitempty"`
+	ReceivingSnapCount  uint32             `json:"receiving_snap_count,omitempty"`
+	ApplyingSnapCount   uint32             `json:"applying_snap_count,omitempty"`
+	IsBusy              bool               `json:"is_busy,omitempty"`
+	StartTS             *time.Time         `json:"start_ts,omitempty"`
+	LastHeartbeatTS     *time.Time         `json:"last_heartbeat_ts,omitempty"`
+	Uptime              *typeutil.Duration `json:"uptime,omitempty"`
 }
 
 // StoreInfo contains information about a store.
@@ -79,21 +81,22 @@ func newStoreInfo(opt *config.ScheduleConfig, store *core.StoreInfo) *StoreInfo 
 			StateName: store.GetState().String(),
 		},
 		Status: &StoreStatus{
-			Capacity:           typeutil.ByteSize(store.GetCapacity()),
-			Available:          typeutil.ByteSize(store.GetAvailable()),
-			UsedSize:           typeutil.ByteSize(store.GetUsedSize()),
-			LeaderCount:        store.GetLeaderCount(),
-			LeaderWeight:       store.GetLeaderWeight(),
-			LeaderScore:        store.LeaderScore(core.StringToSchedulePolicy(opt.LeaderSchedulePolicy), 0),
-			LeaderSize:         store.GetLeaderSize(),
-			RegionCount:        store.GetRegionCount(),
-			RegionWeight:       store.GetRegionWeight(),
-			RegionScore:        store.RegionScore(opt.HighSpaceRatio, opt.LowSpaceRatio, 0),
-			RegionSize:         store.GetRegionSize(),
-			SendingSnapCount:   store.GetSendingSnapCount(),
-			ReceivingSnapCount: store.GetReceivingSnapCount(),
-			ApplyingSnapCount:  store.GetApplyingSnapCount(),
-			IsBusy:             store.IsBusy(),
+			Capacity:            typeutil.ByteSize(store.GetCapacity()),
+			Available:           typeutil.ByteSize(store.GetAvailable()),
+			UsedSize:            typeutil.ByteSize(store.GetUsedSize()),
+			LeaderCount:         store.GetLeaderCount(),
+			LeaderWeight:        store.GetLeaderWeight(),
+			LeaderScore:         store.LeaderScore(core.StringToSchedulePolicy(opt.LeaderSchedulePolicy), 0),
+			LeaderSize:          store.GetLeaderSize(),
+			RegionCount:         store.GetRegionCount(),
+			OriginalRegionCount: store.GetOriginalRegionCount(),
+			RegionWeight:        store.GetRegionWeight(),
+			RegionScore:         store.RegionScore(opt.HighSpaceRatio, opt.LowSpaceRatio, 0),
+			RegionSize:          store.GetRegionSize(),
+			SendingSnapCount:    store.GetSendingSnapCount(),
+			ReceivingSnapCount:  store.GetReceivingSnapCount(),
+			ApplyingSnapCount:   store.GetApplyingSnapCount(),
+			IsBusy:              store.IsBusy(),
 		},
 	}
 
@@ -189,7 +192,9 @@ func (h *storeHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	if force {
 		err = rc.BuryStore(storeID, force)
 	} else {
-		err = rc.RemoveStore(storeID)
+		if err = rc.RemoveStore(storeID); err == nil {
+			rc.UpdateStoreOriginalCount(storeID)
+		}
 	}
 
 	if errors.ErrorEqual(err, errs.ErrStoreNotFound.FastGenByArgs(storeID)) {
@@ -563,6 +568,49 @@ func (h *storesHandler) GetStoreLimitScene(w http.ResponseWriter, r *http.Reques
 	}
 	scene := h.Handler.GetStoreLimitScene(typeValue)
 	h.rd.JSON(w, http.StatusOK, scene)
+}
+
+// @Tags store
+// @Summary Get offline progress of a deleted store.
+// @Produce json
+// @Success 200 {string} string
+// @Failure 400 {string} string "The store is not set as Offline or Tombstone."
+// @Failure 404 {string} string "The store does not exist."
+// @Router /store/{id}/offline-progress [get]
+func (h *storeHandler) GetOfflineProgress(w http.ResponseWriter, r *http.Request) {
+	rc := getCluster(r.Context())
+	vars := mux.Vars(r)
+	storeID, errParse := apiutil.ParseUint64VarsField(vars, "id")
+	if errParse != nil {
+		apiutil.ErrorResp(h.rd, w, errcode.NewInvalidInputErr(errParse))
+		return
+	}
+
+	store := rc.GetStore(storeID)
+	if store == nil {
+		h.rd.JSON(w, http.StatusNotFound, "The store does not exist.")
+		return
+	}
+
+	storeState := store.GetState()
+	switch storeState {
+	case metapb.StoreState_Up:
+		h.rd.JSON(w, http.StatusBadRequest, "The store is not set as Offline or Tombstone.")
+	case metapb.StoreState_Tombstone:
+		h.rd.JSON(w, http.StatusOK, "100%")
+	case metapb.StoreState_Offline:
+		currentRegionCount := store.GetRegionCount()
+		originalRegionCount := store.GetOriginalRegionCount()
+		if originalRegionCount == 0 {
+			h.rd.JSON(w, http.StatusOK, "100%")
+			return
+		}
+		percentage := 100 - float32(currentRegionCount)/float32(originalRegionCount)*100
+		if percentage < 0 {
+			percentage = 0
+		}
+		h.rd.JSON(w, http.StatusOK, fmt.Sprintf("%d%%", int(percentage)))
+	}
 }
 
 // @Tags store
