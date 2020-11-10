@@ -36,6 +36,7 @@ func NewHandler(ctx context.Context, svr *server.Server) (http.Handler, server.S
 	router.PathPrefix(apiPrefix).Handler(negroni.New(
 		serverapi.NewRuntimeServiceValidator(svr, group),
 		serverapi.NewRedirector(svr),
+		serverapi.NewAuthenticator(svr),
 		negroni.Wrap(r)),
 	)
 

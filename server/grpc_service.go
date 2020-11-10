@@ -16,9 +16,11 @@ package server
 import (
 	"context"
 	"fmt"
+	"google.golang.org/grpc/metadata"
 	"io"
 	"math"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -51,9 +53,12 @@ var (
 )
 
 // GetMembers implements gRPC PDServer.
-func (s *Server) GetMembers(context.Context, *pdpb.GetMembersRequest) (*pdpb.GetMembersResponse, error) {
+func (s *Server) GetMembers(ctx context.Context, request *pdpb.GetMembersRequest) (*pdpb.GetMembersResponse, error) {
 	if s.IsClosed() {
 		return nil, status.Errorf(codes.Unknown, "server not started")
+	}
+	if err := s.validateUser(ctx); err != nil {
+		return nil, err
 	}
 	members, err := cluster.GetMembers(s.GetClient())
 	if err != nil {
@@ -86,6 +91,9 @@ func (s *Server) GetMembers(context.Context, *pdpb.GetMembersRequest) (*pdpb.Get
 
 // Tso implements gRPC PDServer.
 func (s *Server) Tso(stream pdpb.PD_TsoServer) error {
+	if err := s.validateUser(stream.Context()); err != nil {
+		return err
+	}
 	for {
 		request, err := stream.Recv()
 		if err == io.EOF {
@@ -129,6 +137,9 @@ func (s *Server) Bootstrap(ctx context.Context, request *pdpb.BootstrapRequest) 
 	if err := s.validateRequest(request.GetHeader()); err != nil {
 		return nil, err
 	}
+	if err := s.validateUser(ctx); err != nil {
+		return nil, err
+	}
 
 	rc := s.GetRaftCluster()
 	if rc != nil {
@@ -155,6 +166,9 @@ func (s *Server) IsBootstrapped(ctx context.Context, request *pdpb.IsBootstrappe
 	if err := s.validateRequest(request.GetHeader()); err != nil {
 		return nil, err
 	}
+	if err := s.validateUser(ctx); err != nil {
+		return nil, err
+	}
 
 	rc := s.GetRaftCluster()
 	return &pdpb.IsBootstrappedResponse{
@@ -166,6 +180,9 @@ func (s *Server) IsBootstrapped(ctx context.Context, request *pdpb.IsBootstrappe
 // AllocID implements gRPC PDServer.
 func (s *Server) AllocID(ctx context.Context, request *pdpb.AllocIDRequest) (*pdpb.AllocIDResponse, error) {
 	if err := s.validateRequest(request.GetHeader()); err != nil {
+		return nil, err
+	}
+	if err := s.validateUser(ctx); err != nil {
 		return nil, err
 	}
 
@@ -184,6 +201,9 @@ func (s *Server) AllocID(ctx context.Context, request *pdpb.AllocIDRequest) (*pd
 // GetStore implements gRPC PDServer.
 func (s *Server) GetStore(ctx context.Context, request *pdpb.GetStoreRequest) (*pdpb.GetStoreResponse, error) {
 	if err := s.validateRequest(request.GetHeader()); err != nil {
+		return nil, err
+	}
+	if err := s.validateUser(ctx); err != nil {
 		return nil, err
 	}
 
@@ -222,6 +242,9 @@ func checkStore(rc *cluster.RaftCluster, storeID uint64) *pdpb.Error {
 // PutStore implements gRPC PDServer.
 func (s *Server) PutStore(ctx context.Context, request *pdpb.PutStoreRequest) (*pdpb.PutStoreResponse, error) {
 	if err := s.validateRequest(request.GetHeader()); err != nil {
+		return nil, err
+	}
+	if err := s.validateUser(ctx); err != nil {
 		return nil, err
 	}
 
@@ -265,6 +288,9 @@ func (s *Server) GetAllStores(ctx context.Context, request *pdpb.GetAllStoresReq
 	if err := s.validateRequest(request.GetHeader()); err != nil {
 		return nil, err
 	}
+	if err := s.validateUser(ctx); err != nil {
+		return nil, err
+	}
 
 	rc := s.GetRaftCluster()
 	if rc == nil {
@@ -292,6 +318,9 @@ func (s *Server) GetAllStores(ctx context.Context, request *pdpb.GetAllStoresReq
 // StoreHeartbeat implements gRPC PDServer.
 func (s *Server) StoreHeartbeat(ctx context.Context, request *pdpb.StoreHeartbeatRequest) (*pdpb.StoreHeartbeatResponse, error) {
 	if err := s.validateRequest(request.GetHeader()); err != nil {
+		return nil, err
+	}
+	if err := s.validateUser(ctx); err != nil {
 		return nil, err
 	}
 
@@ -376,6 +405,9 @@ func (s *heartbeatServer) Recv() (*pdpb.RegionHeartbeatRequest, error) {
 
 // RegionHeartbeat implements gRPC PDServer.
 func (s *Server) RegionHeartbeat(stream pdpb.PD_RegionHeartbeatServer) error {
+	if err := s.validateUser(stream.Context()); err != nil {
+		return err
+	}
 	server := &heartbeatServer{stream: stream}
 	rc := s.GetRaftCluster()
 	if rc == nil {
@@ -459,6 +491,9 @@ func (s *Server) GetRegion(ctx context.Context, request *pdpb.GetRegionRequest) 
 	if err := s.validateRequest(request.GetHeader()); err != nil {
 		return nil, err
 	}
+	if err := s.validateUser(ctx); err != nil {
+		return nil, err
+	}
 
 	rc := s.GetRaftCluster()
 	if rc == nil {
@@ -480,6 +515,9 @@ func (s *Server) GetRegion(ctx context.Context, request *pdpb.GetRegionRequest) 
 // GetPrevRegion implements gRPC PDServer
 func (s *Server) GetPrevRegion(ctx context.Context, request *pdpb.GetRegionRequest) (*pdpb.GetRegionResponse, error) {
 	if err := s.validateRequest(request.GetHeader()); err != nil {
+		return nil, err
+	}
+	if err := s.validateUser(ctx); err != nil {
 		return nil, err
 	}
 
@@ -506,6 +544,9 @@ func (s *Server) GetRegionByID(ctx context.Context, request *pdpb.GetRegionByIDR
 	if err := s.validateRequest(request.GetHeader()); err != nil {
 		return nil, err
 	}
+	if err := s.validateUser(ctx); err != nil {
+		return nil, err
+	}
 
 	rc := s.GetRaftCluster()
 	if rc == nil {
@@ -527,6 +568,9 @@ func (s *Server) GetRegionByID(ctx context.Context, request *pdpb.GetRegionByIDR
 // ScanRegions implements gRPC PDServer.
 func (s *Server) ScanRegions(ctx context.Context, request *pdpb.ScanRegionsRequest) (*pdpb.ScanRegionsResponse, error) {
 	if err := s.validateRequest(request.GetHeader()); err != nil {
+		return nil, err
+	}
+	if err := s.validateUser(ctx); err != nil {
 		return nil, err
 	}
 
@@ -559,6 +603,9 @@ func (s *Server) AskSplit(ctx context.Context, request *pdpb.AskSplitRequest) (*
 	if err := s.validateRequest(request.GetHeader()); err != nil {
 		return nil, err
 	}
+	if err := s.validateUser(ctx); err != nil {
+		return nil, err
+	}
 
 	rc := s.GetRaftCluster()
 	if rc == nil {
@@ -585,6 +632,9 @@ func (s *Server) AskSplit(ctx context.Context, request *pdpb.AskSplitRequest) (*
 // AskBatchSplit implements gRPC PDServer.
 func (s *Server) AskBatchSplit(ctx context.Context, request *pdpb.AskBatchSplitRequest) (*pdpb.AskBatchSplitResponse, error) {
 	if err := s.validateRequest(request.GetHeader()); err != nil {
+		return nil, err
+	}
+	if err := s.validateUser(ctx); err != nil {
 		return nil, err
 	}
 
@@ -619,6 +669,9 @@ func (s *Server) ReportSplit(ctx context.Context, request *pdpb.ReportSplitReque
 	if err := s.validateRequest(request.GetHeader()); err != nil {
 		return nil, err
 	}
+	if err := s.validateUser(ctx); err != nil {
+		return nil, err
+	}
 
 	rc := s.GetRaftCluster()
 	if rc == nil {
@@ -637,6 +690,9 @@ func (s *Server) ReportSplit(ctx context.Context, request *pdpb.ReportSplitReque
 // ReportBatchSplit implements gRPC PDServer.
 func (s *Server) ReportBatchSplit(ctx context.Context, request *pdpb.ReportBatchSplitRequest) (*pdpb.ReportBatchSplitResponse, error) {
 	if err := s.validateRequest(request.GetHeader()); err != nil {
+		return nil, err
+	}
+	if err := s.validateUser(ctx); err != nil {
 		return nil, err
 	}
 
@@ -660,6 +716,9 @@ func (s *Server) GetClusterConfig(ctx context.Context, request *pdpb.GetClusterC
 	if err := s.validateRequest(request.GetHeader()); err != nil {
 		return nil, err
 	}
+	if err := s.validateUser(ctx); err != nil {
+		return nil, err
+	}
 
 	rc := s.GetRaftCluster()
 	if rc == nil {
@@ -674,6 +733,9 @@ func (s *Server) GetClusterConfig(ctx context.Context, request *pdpb.GetClusterC
 // PutClusterConfig implements gRPC PDServer.
 func (s *Server) PutClusterConfig(ctx context.Context, request *pdpb.PutClusterConfigRequest) (*pdpb.PutClusterConfigResponse, error) {
 	if err := s.validateRequest(request.GetHeader()); err != nil {
+		return nil, err
+	}
+	if err := s.validateUser(ctx); err != nil {
 		return nil, err
 	}
 
@@ -696,6 +758,9 @@ func (s *Server) PutClusterConfig(ctx context.Context, request *pdpb.PutClusterC
 // ScatterRegion implements gRPC PDServer.
 func (s *Server) ScatterRegion(ctx context.Context, request *pdpb.ScatterRegionRequest) (*pdpb.ScatterRegionResponse, error) {
 	if err := s.validateRequest(request.GetHeader()); err != nil {
+		return nil, err
+	}
+	if err := s.validateUser(ctx); err != nil {
 		return nil, err
 	}
 
@@ -734,6 +799,9 @@ func (s *Server) GetGCSafePoint(ctx context.Context, request *pdpb.GetGCSafePoin
 	if err := s.validateRequest(request.GetHeader()); err != nil {
 		return nil, err
 	}
+	if err := s.validateUser(ctx); err != nil {
+		return nil, err
+	}
 
 	rc := s.GetRaftCluster()
 	if rc == nil {
@@ -756,12 +824,19 @@ func (s *Server) SyncRegions(stream pdpb.PD_SyncRegionsServer) error {
 	if s.cluster == nil {
 		return ErrNotStarted
 	}
+	if err := s.validateUser(stream.Context()); err != nil {
+		return err
+	}
+
 	return s.cluster.GetRegionSyncer().Sync(stream)
 }
 
 // UpdateGCSafePoint implements gRPC PDServer.
 func (s *Server) UpdateGCSafePoint(ctx context.Context, request *pdpb.UpdateGCSafePointRequest) (*pdpb.UpdateGCSafePointResponse, error) {
 	if err := s.validateRequest(request.GetHeader()); err != nil {
+		return nil, err
+	}
+	if err := s.validateUser(ctx); err != nil {
 		return nil, err
 	}
 
@@ -803,6 +878,9 @@ func (s *Server) UpdateServiceGCSafePoint(ctx context.Context, request *pdpb.Upd
 	defer s.serviceSafePointLock.Unlock()
 
 	if err := s.validateRequest(request.GetHeader()); err != nil {
+		return nil, err
+	}
+	if err := s.validateUser(ctx); err != nil {
 		return nil, err
 	}
 
@@ -868,6 +946,9 @@ func (s *Server) GetOperator(ctx context.Context, request *pdpb.GetOperatorReque
 	if err := s.validateRequest(request.GetHeader()); err != nil {
 		return nil, err
 	}
+	if err := s.validateUser(ctx); err != nil {
+		return nil, err
+	}
 
 	rc := s.GetRaftCluster()
 	if rc == nil {
@@ -892,6 +973,36 @@ func (s *Server) GetOperator(ctx context.Context, request *pdpb.GetOperatorReque
 		Kind:     []byte(r.Op.Kind().String()),
 		Status:   r.Status,
 	}, nil
+}
+
+func (s *Server) validateUser(ctx context.Context) error {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		log.Info("non grpc request. ignored.")
+		return nil
+	}
+	if !s.cfg.Security.Authentication {
+		return nil
+	}
+	user, pass, ok := getUser(md.Get("Authorization"))
+	if !ok {
+		log.Info("no auth provided")
+		return nil
+		// return status.Errorf(codes.Unauthenticated, "no auth provided")
+	}
+	log.Info("grpc user", zap.String("user", user), zap.String("pass", pass))
+	return nil
+}
+
+func getUser(auth []string) (string, string, bool) {
+	if len(auth) != 1 {
+		return "", "", false
+	}
+	auth_pair := strings.SplitN(auth[0], ":", 2)
+	if len(auth_pair) != 2 {
+		return "", "", false
+	}
+	return auth_pair[0], auth_pair[1], true
 }
 
 // validateRequest checks if Server is leader and clusterID is matched.

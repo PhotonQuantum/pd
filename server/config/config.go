@@ -183,6 +183,7 @@ func NewConfig() *Config {
 	fs.StringVar(&cfg.Security.CAPath, "cacert", "", "path of file that contains list of trusted TLS CAs")
 	fs.StringVar(&cfg.Security.CertPath, "cert", "", "path of file that contains X509 certificate in PEM format")
 	fs.StringVar(&cfg.Security.KeyPath, "key", "", "path of file that contains X509 key in PEM format")
+	fs.BoolVar(&cfg.Security.Authentication, "authentication", false, "enable rbac-based authentication")
 	fs.BoolVar(&cfg.ForceNewCluster, "force-new-cluster", false, "force to create a new one-member cluster")
 
 	return cfg
@@ -1362,6 +1363,7 @@ func (c *LocalTSOConfig) Validate() error {
 type SecurityConfig struct {
 	grpcutil.TLSConfig
 	// RedactInfoLog indicates that whether enabling redact log
-	RedactInfoLog bool              `toml:"redact-info-log" json:"redact-info-log"`
-	Encryption    encryption.Config `toml:"encryption" json:"encryption"`
+	RedactInfoLog  bool              `toml:"redact-info-log" json:"redact-info-log"`
+	Encryption     encryption.Config `toml:"encryption" json:"encryption"`
+	Authentication bool              `toml:"authentication" json:"authentication"`
 }

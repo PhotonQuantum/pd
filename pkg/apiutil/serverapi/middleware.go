@@ -14,6 +14,7 @@
 package serverapi
 
 import (
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -38,6 +39,31 @@ const (
 	errRedirectFailed      = "redirect failed"
 	errRedirectToNotLeader = "redirect to not leader"
 )
+
+type authenticator struct {
+	s *server.Server
+}
+
+func NewAuthenticator(s *server.Server) negroni.Handler {
+	return &authenticator{s: s}
+}
+
+func (h authenticator) ServeHTTP(w http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+	if !h.s.GetConfig().Security.Authentication {
+		next(w, r)
+		return
+	}
+
+	if user, pass, ok := r.BasicAuth(); ok {
+		log.Info(fmt.Sprintf("user:%s pass:%s", user, pass))
+	} else {
+		// http.Error(w, "no auth provided", http.StatusUnauthorized)
+		log.Error("no auth provided")
+	}
+
+	next(w, r)
+	return
+}
 
 type runtimeServiceValidator struct {
 	s     *server.Server
