@@ -19,10 +19,6 @@ import (
 	"sort"
 )
 
-var (
-	rolePrefix = "roles"
-)
-
 // Role records role info.
 // Read-Only once created.
 type Role struct {

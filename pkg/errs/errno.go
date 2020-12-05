@@ -290,9 +290,14 @@ var (
 
 // auth
 var (
+	ErrUserNotFound          = errors.Normalize("user not found: %s", errors.RFCCodeText("PD:auth:ErrUserNotFound"))
+	ErrUserExists            = errors.Normalize("user already exists: %s", errors.RFCCodeText("PD:auth:ErrUserExists"))
+	ErrUserHasRole           = errors.Normalize("role %s already has permission: %s", errors.RFCCodeText("PD:auth:ErrUserHasPermission"))
+	ErrUserMissingRole       = errors.Normalize("role %s doesn't have permission: %s", errors.RFCCodeText("PD:auth:ErrUserMissingPermission"))
 	ErrRoleNotFound          = errors.Normalize("role not found: %s", errors.RFCCodeText("PD:auth:ErrRoleNotFound"))
 	ErrRoleExists            = errors.Normalize("role already exists: %s", errors.RFCCodeText("PD:auth:ErrRoleExists"))
-	ErrInvalidName           = errors.Normalize("key name may only contain alphanumeric and underscores, and may only start with an alphabetic character.", errors.RFCCodeText("PD:auth:ErrInvalidName"))
 	ErrRoleHasPermission     = errors.Normalize("role %s already has permission: %s", errors.RFCCodeText("PD:auth:ErrRoleHasPermission"))
 	ErrRoleMissingPermission = errors.Normalize("role %s doesn't have permission: %s", errors.RFCCodeText("PD:auth:ErrRoleMissingPermission"))
+	ErrInvalidName           = errors.Normalize("key name may only contain alphanumeric and underscores, and may only start with an alphabetic character.", errors.RFCCodeText("PD:auth:ErrInvalidName"))
+	ErrPasswordMismatch      = errors.Normalize("given password doesn't match the hash", errors.RFCCodeText("PD:auth:ErrPasswordMismatch"))
 )
