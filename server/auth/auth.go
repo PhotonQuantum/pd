@@ -15,10 +15,12 @@
 package auth
 
 import (
+	"context"
 	"encoding/json"
 	"path"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/tikv/pd/pkg/errs"
 	"github.com/tikv/pd/server/kv"
@@ -34,12 +36,18 @@ var (
 type RBACManager struct {
 	userManager
 	roleManager
+	mu              *sync.RWMutex
+	ctx             context.Context
+	cancel          context.CancelFunc
+	allowAutoUpdate bool
 }
 
 // NewRBACManager creates a new RBACManager.
-func NewRBACManager(kv kv.Base) *RBACManager {
+func NewRBACManager(ctx context.Context, kv kv.Base) *RBACManager {
 	mu := new(sync.RWMutex)
-	return &RBACManager{
+	ctx, cancel := context.WithCancel(ctx)
+
+	manager := &RBACManager{
 		userManager{
 			kv:    kv,
 			mu:    mu,
@@ -49,7 +57,16 @@ func NewRBACManager(kv kv.Base) *RBACManager {
 			kv:    kv,
 			mu:    mu,
 			roles: make(map[string]*Role),
-		}}
+		},
+		mu,
+		ctx,
+		cancel,
+		false,
+	}
+
+	go manager.runAutoUpdate()
+
+	return manager
 }
 
 // SetRoles sets roles of a user.
@@ -127,6 +144,79 @@ func (m *RBACManager) UpdateCache() error {
 	}
 
 	return nil
+}
+
+// Start allows this manager to sync with etcd and do autogc.
+// This method should be called when pd gain leadership.
+func (m *RBACManager) Start() error {
+	err := m.UpdateCache()
+	if err != nil {
+		return err
+	}
+
+	m.allowAutoUpdate = true
+	return nil
+}
+
+// Pause suspends the synchronization between memory cache and etcd.
+// This method should be called when pd lose leadership.
+func (m *RBACManager) Pause() {
+	m.allowAutoUpdate = false
+}
+
+// Stop stops this manager.
+func (m *RBACManager) Stop() {
+	m.cancel()
+}
+
+// runGC removes invalid roles from users
+func (m *RBACManager) runGC() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	users := m.userManager.users
+	roles := m.roleManager.roles
+	for name, user := range users {
+		for roleKey := range user.RoleKeys {
+			_, ok := roles[roleKey]
+			if !ok {
+				delete(user.RoleKeys, roleKey)
+			}
+		}
+
+		userJSON, err := json.Marshal(user)
+		if err != nil {
+			return err
+		}
+		userPath := path.Join(userPrefix, name)
+
+		err = m.userManager.kv.Save(userPath, string(userJSON))
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (m *RBACManager) runAutoUpdate() {
+	timer := time.NewTimer(30)
+	defer timer.Stop()
+
+	for {
+		select {
+		case <-timer.C:
+			timer.Reset(30)
+
+			if m.allowAutoUpdate {
+				_ = m.UpdateCache()
+				_ = m.runGC()
+			}
+
+		case <-m.ctx.Done():
+			return
+		}
+	}
 }
 
 type userManager struct {

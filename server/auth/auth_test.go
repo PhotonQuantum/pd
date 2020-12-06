@@ -15,6 +15,7 @@
 package auth
 
 import (
+	"context"
 	"github.com/tikv/pd/pkg/errs"
 	"github.com/tikv/pd/server/kv"
 	"path"
@@ -42,11 +43,12 @@ func (s *testAuthSuite) TestRBACManager(c *C) {
 		s.testRBACSetRoles,
 		s.testRBACAddRole,
 		s.testRBACRemoveRole,
+		s.testRunGC,
 	}
 	for _, f := range testFuncs {
 		k := kv.NewMemoryKV()
 		initKV(c, k)
-		manager := NewRBACManager(k)
+		manager := NewRBACManager(context.Background(), k)
 		err := manager.UpdateCache()
 		c.Assert(err, IsNil)
 		f(c, manager)
@@ -112,6 +114,22 @@ func (s *testAuthSuite) testRBACRemoveRole(c *C, m *RBACManager) {
 	err := m.RemoveRole("alice", "somebody")
 	c.Assert(err, NotNil)
 	c.Assert(errs.ErrRoleNotFound.Equal(err), IsTrue)
+}
+
+func (s *testAuthSuite) testRunGC(c *C, m *RBACManager) {
+	err := m.DeleteRole("reader")
+	c.Assert(err, IsNil)
+
+	err = m.runGC()
+	c.Assert(err, IsNil)
+
+	user, err := m.GetUser("alice")
+	c.Assert(err, IsNil)
+	c.Assert(user.RoleKeys, DeepEquals, map[string]struct{}{})
+
+	user, err = m.GetUser("bob")
+	c.Assert(err, IsNil)
+	c.Assert(user.RoleKeys, DeepEquals, map[string]struct{}{"writer": {}})
 }
 
 func (s *testAuthSuite) TestUserManager(c *C) {
