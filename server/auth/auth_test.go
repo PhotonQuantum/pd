@@ -41,10 +41,11 @@ func Test(t *testing.T) {
 var _ = Suite(&testAuthSuite{})
 
 type testAuthSuite struct{}
+type testRBACFunc func(*C, *RBACManager)
 type testUserFunc func(*C, *userManager)
 type testRoleFunc func(*C, *roleManager)
 
-func (s *testAuthSuite) TestRoleManager(c *C) {
+func (s *testAuthSuite) TestRBACManager(c *C) {
 	cfg := newTestSingleConfig()
 	defer cleanConfig(cfg)
 	etcd, err := embed.StartEtcd(cfg)
@@ -58,15 +59,12 @@ func (s *testAuthSuite) TestRoleManager(c *C) {
 	c.Assert(err, IsNil)
 	rootPath := path.Join("/pd", strconv.FormatUint(100, 10))
 
-	manager := newRoleManager(kv.NewEtcdKVBase(client, rootPath))
-	testFuncs := []testRoleFunc{
-		s.testGetRole,
-		s.testGetRoles,
-		s.testCreateRole,
-		s.testDeleteRole,
-		s.testSetPermissions,
-		s.testAddPermission,
-		s.testRemovePermission,
+	manager := NewRBACManager(kv.NewEtcdKVBase(client, rootPath))
+	testFuncs := []testRBACFunc{
+		s.testHasPermissions,
+		s.testRBACSetRoles,
+		s.testRBACAddRole,
+		s.testRBACRemoveRole,
 	}
 	for _, f := range testFuncs {
 		initKV(c, client, rootPath)
@@ -74,6 +72,67 @@ func (s *testAuthSuite) TestRoleManager(c *C) {
 		c.Assert(err, IsNil)
 		f(c, manager)
 	}
+}
+
+func (s *testAuthSuite) testHasPermissions(c *C, m *RBACManager) {
+	_, err := m.HasPermissions("john", map[Permission]struct{}{})
+	c.Assert(err, NotNil)
+	c.Assert(errs.ErrUserNotFound.Equal(err), IsTrue)
+
+	testCases := []struct {
+		username    string
+		permissions map[Permission]struct{}
+		expected    bool
+	}{
+		{
+			username:    "alice",
+			permissions: map[Permission]struct{}{{Resource: "store", Action: "get"}: {}},
+			expected:    true,
+		},
+		{
+			username:    "alice",
+			permissions: map[Permission]struct{}{{Resource: "store", Action: "get"}: {}, {Resource: "region", Action: "list"}: {}},
+			expected:    true,
+		},
+		{
+			username:    "alice",
+			permissions: map[Permission]struct{}{{Resource: "store", Action: "update"}: {}},
+			expected:    false,
+		},
+		{
+			username:    "alice",
+			permissions: map[Permission]struct{}{{Resource: "store", Action: "get"}: {}, {Resource: "region", Action: "update"}: {}},
+			expected:    false,
+		},
+		{
+			username:    "alice",
+			permissions: map[Permission]struct{}{{Resource: "user", Action: "get"}: {}},
+			expected:    false,
+		},
+	}
+	for _, testCase := range testCases {
+		hasPermission, err := m.HasPermissions(testCase.username, testCase.permissions)
+		c.Assert(err, IsNil)
+		c.Assert(hasPermission, Equals, testCase.expected)
+	}
+}
+
+func (s *testAuthSuite) testRBACSetRoles(c *C, m *RBACManager) {
+	err := m.SetRoles("alice", map[string]struct{}{"somebody": {}, "admin": {}})
+	c.Assert(err, NotNil)
+	c.Assert(errs.ErrRoleNotFound.Equal(err), IsTrue)
+}
+
+func (s *testAuthSuite) testRBACAddRole(c *C, m *RBACManager) {
+	err := m.AddRole("alice", "somebody")
+	c.Assert(err, NotNil)
+	c.Assert(errs.ErrRoleNotFound.Equal(err), IsTrue)
+}
+
+func (s *testAuthSuite) testRBACRemoveRole(c *C, m *RBACManager) {
+	err := m.RemoveRole("alice", "somebody")
+	c.Assert(err, NotNil)
+	c.Assert(errs.ErrRoleNotFound.Equal(err), IsTrue)
 }
 
 func (s *testAuthSuite) TestUserManager(c *C) {
@@ -100,6 +159,38 @@ func (s *testAuthSuite) TestUserManager(c *C) {
 		s.testSetRoles,
 		s.testAddRole,
 		s.testRemoveRole,
+	}
+	for _, f := range testFuncs {
+		initKV(c, client, rootPath)
+		err = manager.UpdateCache()
+		c.Assert(err, IsNil)
+		f(c, manager)
+	}
+}
+
+func (s *testAuthSuite) TestRoleManager(c *C) {
+	cfg := newTestSingleConfig()
+	defer cleanConfig(cfg)
+	etcd, err := embed.StartEtcd(cfg)
+	c.Assert(err, IsNil)
+	defer etcd.Close()
+
+	ep := cfg.LCUrls[0].String()
+	client, err := clientv3.New(clientv3.Config{
+		Endpoints: []string{ep},
+	})
+	c.Assert(err, IsNil)
+	rootPath := path.Join("/pd", strconv.FormatUint(100, 10))
+
+	manager := newRoleManager(kv.NewEtcdKVBase(client, rootPath))
+	testFuncs := []testRoleFunc{
+		s.testGetRole,
+		s.testGetRoles,
+		s.testCreateRole,
+		s.testDeleteRole,
+		s.testSetPermissions,
+		s.testAddPermission,
+		s.testRemovePermission,
 	}
 	for _, f := range testFuncs {
 		initKV(c, client, rootPath)

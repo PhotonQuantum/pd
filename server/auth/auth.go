@@ -52,6 +52,83 @@ func NewRBACManager(kv kv.Base) *RBACManager {
 		}}
 }
 
+// SetRoles sets roles of a user.
+func (m *RBACManager) SetRoles(name string, roles map[string]struct{}) error {
+	for role := range roles {
+		_, err := m.GetRole(role)
+		if err != nil {
+			return err
+		}
+	}
+	return m.userManager.SetRoles(name, roles)
+}
+
+// AddRole adds a role to a user.
+func (m *RBACManager) AddRole(name string, role string) error {
+	_, err := m.GetRole(role)
+	if err != nil {
+		return err
+	}
+
+	return m.userManager.AddRole(name, role)
+}
+
+// RemoveRole removes a role from a user.
+func (m *RBACManager) RemoveRole(name string, role string) error {
+	_, err := m.GetRole(role)
+	if err != nil {
+		return err
+	}
+
+	return m.userManager.RemoveRole(name, role)
+}
+
+// HasPermissions checks whether a user has each of a given set of permissions.
+func (m *RBACManager) HasPermissions(name string, expectedPermissions map[Permission]struct{}) (bool, error) {
+	user, err := m.GetUser(name)
+	if err != nil {
+		return false, err
+	}
+
+	for roleName := range user.RoleKeys {
+		if len(expectedPermissions) == 0 {
+			break
+		}
+
+		role, err := m.GetRole(roleName)
+		if errs.ErrRoleNotFound.Equal(err) {
+			continue
+		}
+		if err != nil {
+			return false, err
+		}
+
+		for expectedPermission := range expectedPermissions {
+			hasPermission := role.HasPermission(expectedPermission)
+			if hasPermission {
+				delete(expectedPermissions, expectedPermission)
+			}
+		}
+	}
+
+	return len(expectedPermissions) == 0, nil
+}
+
+// UpdateCache refreshes in-memory cache.
+func (m *RBACManager) UpdateCache() error {
+	err := m.userManager.UpdateCache()
+	if err != nil {
+		return err
+	}
+
+	err = m.roleManager.UpdateCache()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 type userManager struct {
 	kv    kv.Base
 	mu    *sync.RWMutex
